@@ -91,7 +91,7 @@ class GCN(nn.Module):
             self.input_linear = nn.Linear(in_features=in_channels, out_features=hidden_channels)
         if output_layer:
             self.output_linear = nn.Linear(in_features=hidden_channels, out_features=out_channels)
-            self.output_normalization = self.norm_type(hidden_channels)
+            #self.output_normalization = self.norm_type(hidden_channels)
         self.convs = nn.ModuleList()
         if self.is_norm:
             self.norms = nn.ModuleList()
@@ -130,7 +130,7 @@ class GCN(nn.Module):
                 x = F.dropout(x, p=self.dropout, training=self.training)
 
         if self.output_layer:
-            x = self.output_normalization(x)
+            #x = self.output_normalization(x)
             x = self.output_linear(x).squeeze(1)
 
         return x.squeeze(1)
@@ -141,7 +141,7 @@ class GCNPlus(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, n_layers=5, dropout=0.5, norm_info=None,
                  act='F.relu', input_layer=False, output_layer=False, bias=True, add_self_loops=True):
 
-        super(GCN, self).__init__()
+        super(GCNPlus, self).__init__()
         self.in_channels = in_channels
         self.hidden_channels = hidden_channels
         self.out_channels = out_channels
@@ -158,7 +158,7 @@ class GCNPlus(nn.Module):
             self.input_linear = nn.Linear(in_features=in_channels, out_features=hidden_channels)
         if output_layer:
             self.output_linear = nn.Linear(in_features=hidden_channels, out_features=out_channels)
-            self.output_normalization = self.norm_type(hidden_channels)
+            #self.output_normalization = self.norm_type(hidden_channels)
 
             self.output_linear1 = nn.Linear(in_features=hidden_channels, out_features=out_channels)
         self.convs = nn.ModuleList()
@@ -199,7 +199,7 @@ class GCNPlus(nn.Module):
                 x = F.dropout(x, p=self.dropout, training=self.training)
 
         if self.output_layer:
-            x = self.output_normalization(x)
+            #x = self.output_normalization(x)
             x1 = self.output_linear(x).squeeze(1)
             x2 = self.output_linear1(x).squeeze(1)
             return x1,x2

@@ -1,5 +1,7 @@
 from predictor.Base_Predictor import Predictor
-from predictor.module.GNNs import GCN
+from predictor.module.GNNs import GCN,GCNPlus
+from torch.nn import Parameter
+import math
 import time
 import torch
 import torch.nn.functional as F
@@ -16,7 +18,7 @@ class mygnn_Predictor(Predictor):
         super().__init__(conf, data, device)
 
     def method_init(self, conf, data):
-        self.model = GCN(in_channels=conf.model['n_feat'], hidden_channels=conf.model['n_hidden'],
+        self.model = GCNPlus(in_channels=conf.model['n_feat'], hidden_channels=conf.model['n_hidden'],
                          out_channels=conf.model['n_classes'],
                          n_layers=conf.model['n_layer'], dropout=conf.model['dropout'],
                          norm_info=conf.model['norm_info'],
@@ -54,7 +56,7 @@ class mygnn_Predictor(Predictor):
             model.train()
             optimizer.zero_grad()
             z = model(features_shuffled, adj_dropped.indices())
-            loss = coding_rate_loss(z, adj_dropped)
+            loss = coding_rate_loss(z, adj_dropped.to_dense())
             loss.backward()
             optimizer.step()
 
@@ -96,9 +98,10 @@ class mygnn_Predictor(Predictor):
 
             tmp = self.loss_fn(output[self.val_mask], self.noisy_label[self.val_mask])
             idx_add = self.val_mask[tmp<0.3]
-            loss_add = self.loss_fn(output[idx_add], output1[idx_add])
+            
+            loss_add = self.loss_fn(F.one_hot(output[idx_add].max(dim=1)[1], 7).float(), output1[idx_add])
 
-            total_loss = loss_gcn+loss_pse+0.5*loss_add
+            total_loss = loss_gcn+loss_pse+0.005*loss_add
 
             total_loss.backward()
 
@@ -231,12 +234,12 @@ class MaximalCodingRateReduction(torch.nn.Module):
             a = a.T
             log_det = torch.logdet(I + scalar * a.matmul(W.T))
             compress_loss += log_det * trPi / m
-        num = data.x.shape[0]
+        num = p
         compress_loss = compress_loss / 2 * (num / sum_trPi)
         return compress_loss
 
     def forward(self, X, A):
-        i = np.random.randint(A.shape[0], size=args.num_node_batch)
+        i = np.random.randint(A.shape[0], size=768)
         A = A[i,::]
         A = A.cpu().numpy()
         W = X.T
@@ -248,52 +251,17 @@ class MaximalCodingRateReduction(torch.nn.Module):
         total_loss_empi = - self.gam2 * discrimn_loss_empi + compress_loss_empi
         return total_loss_empi
     
-class Encoder(torch.nn.Module):
-    def __init__(self,
-                 in_channels: int,
-                 hidden_channels: int,
-                 out_channels: int,
-                 activation,
-                 base_model=G2RGCNConv,
-                 k: int = 2):
-        super(Encoder, self).__init__()
-        self.base_model = base_model
-        self.k = k
-        self.conv_1 = self.base_model(in_channels,  hidden_channels)
-        self.conv_0 = self.base_model(in_channels,  out_channels)
-
-        for i in range(2, 10):
-            exec("self.conv_%s = self.base_model( hidden_channels, hidden_channels )" % i)
-
-        self.conv_last_layer = self.base_model(hidden_channels, out_channels)
-        self.conv_layers_list = [self.conv_1, self.conv_2, self.conv_3]
-        self.conv_layers_list.append(self.conv_last_layer)
-        self.activation = activation
-        self.prelu = nn.PReLU(out_channels)
-        self.lin0 = nn.Linear(in_channels, hidden_channels, bias=True)
-        self.lin1 = nn.Linear(hidden_channels, hidden_channels, bias=True)
-        self.lin2 = nn.Linear(hidden_channels, hidden_channels, bias=True)
-        self.lin3 = nn.Linear(hidden_channels, out_channels, bias=True)
-
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor):
-        if self.k == 0:
-            x = self.conv_0( x, edge_index )
-            x = F.normalize(x, p=1)
-            return x
-        for i in range(0, self.k):
-            x = self.activation(self.conv_layers_list[i](x, edge_index))
-        x = self.conv_last_layer(x, edge_index)
-        x = F.normalize(x, p=1)
-        return x
 
 
-class Model(torch.nn.Module):
-    def __init__(self,encoder: Encoder):
-        super(Model, self).__init__()
-        self.encoder: Encoder = encoder
+def glorot(tensor):
+    if tensor is not None:
+        stdv = math.sqrt(6.0 / (tensor.size(-2) + tensor.size(-1)))
+        tensor.data.uniform_(-stdv, stdv)
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        return self.encoder(x, edge_index)
+
+def zeros(tensor):
+    if tensor is not None:
+        tensor.data.fill_(0)
     
 
 
@@ -382,3 +350,49 @@ class G2RGCNConv(MessagePassing):
     def __repr__(self):
         return '{}({}, {})'.format(self.__class__.__name__, self.in_channels,
                                    self.out_channels)
+class Encoder(torch.nn.Module):
+  def __init__(self,
+                in_channels: int,
+                hidden_channels: int,
+                out_channels: int,
+                activation,
+                base_model=G2RGCNConv,
+                k: int = 2):
+      super(Encoder, self).__init__()
+      self.base_model = base_model
+      self.k = k
+      self.conv_1 = self.base_model(in_channels,  hidden_channels)
+      self.conv_0 = self.base_model(in_channels,  out_channels)
+
+      for i in range(2, 10):
+          exec("self.conv_%s = self.base_model( hidden_channels, hidden_channels )" % i)
+
+      self.conv_last_layer = self.base_model(hidden_channels, out_channels)
+      self.conv_layers_list = [self.conv_1, self.conv_2, self.conv_3]
+      self.conv_layers_list.append(self.conv_last_layer)
+      self.activation = activation
+      self.prelu = nn.PReLU(out_channels)
+      self.lin0 = nn.Linear(in_channels, hidden_channels, bias=True)
+      self.lin1 = nn.Linear(hidden_channels, hidden_channels, bias=True)
+      self.lin2 = nn.Linear(hidden_channels, hidden_channels, bias=True)
+      self.lin3 = nn.Linear(hidden_channels, out_channels, bias=True)
+
+  def forward(self, x: torch.Tensor, edge_index: torch.Tensor):
+      if self.k == 0:
+          x = self.conv_0( x, edge_index )
+          x = F.normalize(x, p=1)
+          return x
+      for i in range(0, self.k):
+          x = self.activation(self.conv_layers_list[i](x, edge_index))
+      x = self.conv_last_layer(x, edge_index)
+      x = F.normalize(x, p=1)
+      return x
+
+
+class Model(torch.nn.Module):
+  def __init__(self,encoder: Encoder):
+      super(Model, self).__init__()
+      self.encoder: Encoder = encoder
+
+  def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+      return self.encoder(x, edge_index)
