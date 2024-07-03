@@ -42,7 +42,6 @@ class mygnn_Predictor(Predictor):
             improve = ''
             t0 = time.time()
             self.model.train()
-            self.predictor.train()
             self.optim.zero_grad()
 
             # obtain representations and rec loss of the estimator
@@ -87,7 +86,6 @@ class mygnn_Predictor(Predictor):
                 self.weights = deepcopy(self.model.state_dict())
 
                 # self.best_acc_pred_val = acc_pred_val
-                self.predictor_model_weigths = deepcopy(self.predictor.state_dict())
             elif flag_earlystop:
                 break
 
@@ -106,7 +104,6 @@ class mygnn_Predictor(Predictor):
     def evaluate(self, label, mask):
 
         self.model.eval()
-        self.predictor.eval()
         with torch.no_grad():
             features = self.feats
             with torch.no_grad():

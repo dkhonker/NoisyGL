@@ -1,5 +1,5 @@
 model:
-  method: nrgnn
+  method: mygnn
   n_hidden: 128
   n_layer: 2
   act: F.relu
