@@ -75,7 +75,7 @@ parser.add_argument('--data', type=str,
 parser.add_argument('--method', type=str,
                     default='gcn',
                     choices=['gcn', 'gin', 'smodel', 'jocor', 'coteaching', 'apl', 'sce', 'forward', 'backward',
-                             'nrgnn', 'rtgnn', 'cp', 'unionnet', 'cgnn', 'crgnn', 'clnode', 'rncgln', 'pignn', 'dgnn'],
+                             'nrgnn', 'rtgnn', 'cp', 'unionnet', 'cgnn', 'crgnn', 'clnode', 'rncgln', 'pignn', 'dgnn','mygnn'],
                     help="Select methods")
 parser.add_argument('--noise_type', type=str,
                     default='uniform',
