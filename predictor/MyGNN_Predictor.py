@@ -254,7 +254,7 @@ class Encoder(torch.nn.Module):
                  hidden_channels: int,
                  out_channels: int,
                  activation,
-                 base_model=GCNConv,
+                 base_model=G2RGCNConv,
                  k: int = 2):
         super(Encoder, self).__init__()
         self.base_model = base_model
