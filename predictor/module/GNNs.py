@@ -134,6 +134,77 @@ class GCN(nn.Module):
             x = self.output_linear(x).squeeze(1)
 
         return x.squeeze(1)
+    
+
+class GCNPlus(nn.Module):
+
+    def __init__(self, in_channels, hidden_channels, out_channels, n_layers=5, dropout=0.5, norm_info=None,
+                 act='F.relu', input_layer=False, output_layer=False, bias=True, add_self_loops=True):
+
+        super(GCN, self).__init__()
+        self.in_channels = in_channels
+        self.hidden_channels = hidden_channels
+        self.out_channels = out_channels
+        self.n_layers = n_layers
+        self.input_layer = input_layer
+        self.output_layer = output_layer
+        self.dropout = dropout
+        if norm_info is None:
+            norm_info = {'is_norm': False, 'norm_type': 'LayerNorm'}
+        self.is_norm = norm_info['is_norm']
+        self.norm = eval('nn.' + norm_info['norm_type'])
+        self.act = eval(act)
+        if input_layer:
+            self.input_linear = nn.Linear(in_features=in_channels, out_features=hidden_channels)
+        if output_layer:
+            self.output_linear = nn.Linear(in_features=hidden_channels, out_features=out_channels)
+            self.output_normalization = self.norm_type(hidden_channels)
+
+            self.output_linear1 = nn.Linear(in_features=hidden_channels, out_features=out_channels)
+        self.convs = nn.ModuleList()
+        if self.is_norm:
+            self.norms = nn.ModuleList()
+        else:
+            self.norms = None
+
+        for i in range(n_layers):
+            if i == 0 and not self.input_layer:
+                in_hidden = in_channels
+            else:
+                in_hidden = hidden_channels
+            if i == n_layers - 1 and not self.output_layer:
+                out_hidden = out_channels
+            else:
+                out_hidden = hidden_channels
+            self.convs.append(GCNConv(in_hidden, out_hidden, bias=bias, add_self_loops=add_self_loops))
+            if self.is_norm:
+                self.norms.append(self.norm_type(in_hidden))
+        self.convs[-1].last_layer = True
+
+    def forward(self, x, adj):
+        if self.input_layer:
+            x = self.input_linear(x)
+            x = self.input_drop(x)
+            x = self.act(x)
+
+        for i, layer in enumerate(self.convs):
+            if self.is_norm:
+                x_res = self.norms[i](x)
+                x_res = layer(x_res, adj)
+                x = x + x_res
+            else:
+                x = layer(x, adj)
+            if i < self.n_layers - 1:
+                x = self.act(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
+
+        if self.output_layer:
+            x = self.output_normalization(x)
+            x1 = self.output_linear(x).squeeze(1)
+            x2 = self.output_linear1(x).squeeze(1)
+            return x1,x2
+
+        return x.squeeze(1)
 
 
 

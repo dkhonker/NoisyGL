@@ -6,7 +6,7 @@ model:
   dropout: 0.5
   norm_info: ~
   input_layer: false
-  output_layer: false
+  output_layer: true
 
   edge_hidden: 64
   t_small: 0.1
