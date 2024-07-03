@@ -24,6 +24,8 @@ from predictor.APL_Predictor import apl_Predictor
 from predictor.SCE_Predictor import sce_Predictor
 from predictor.Forward_Predictor import forward_Predictor
 from predictor.Backward_Predictor import backward_Predictor
+
+from predictor.MyGNN_Predictor import mygnn_Predictor
 import torch
 
 
