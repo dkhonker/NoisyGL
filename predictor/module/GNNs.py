@@ -276,6 +276,6 @@ class GCNPlus(nn.Module):
         if self.output_layer:
             x1 = self.convs_ano(x,adj)
             x2 = self.convs_ano1(x,adj)
-            return x1,x2
+            return x1.squeeze(1),x2.squeeze(1)
 
         return x.squeeze(1)
