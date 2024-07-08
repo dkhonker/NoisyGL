@@ -43,24 +43,24 @@ class mygnn_Predictor(Predictor):
 
 
     def train(self):
-      features, adj = self.feats, self.adj
-      edge_index = adj.indices()
-      encoder = Encoder(in_channels=features.shape[1],out_channels=512, hidden_channels=1024, activation=F.relu,base_model=G2RGCNConv, k=1).to(self.device)
-      model = Model(encoder=encoder).to(self.device)        
-      coding_rate_loss = MaximalCodingRateReduction(gam1=0.5, gam2=0.5, eps=0.05).to(self.device)
-      optimizer = torch.optim.Adam( list(model.parameters()) + list(coding_rate_loss.parameters()), lr=0.001, weight_decay=0.0001)
-      for epoch in range(1, 21):
-          model.train()
-          optimizer.zero_grad()
-          adj_dropped = random_edge_dropout(adj, drop_rate=0.3)
-          features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
-          z = model(features_shuffled, adj_dropped.indices())
-          loss = coding_rate_loss(z, adj_dropped.to_dense())
-          loss.backward()
-          optimizer.step()
-      model.eval()
-      z = model(features, adj.indices())
-      #z = torch.randn(512,512).cuda()
+      # features, adj = self.feats, self.adj
+      # edge_index = adj.indices()
+      # encoder = Encoder(in_channels=features.shape[1],out_channels=512, hidden_channels=1024, activation=F.relu,base_model=G2RGCNConv, k=1).to(self.device)
+      # model = Model(encoder=encoder).to(self.device)        
+      # coding_rate_loss = MaximalCodingRateReduction(gam1=0.5, gam2=0.5, eps=0.05).to(self.device)
+      # optimizer = torch.optim.Adam( list(model.parameters()) + list(coding_rate_loss.parameters()), lr=0.001, weight_decay=0.0001)
+      # for epoch in range(1, 21):
+      #     model.train()
+      #     optimizer.zero_grad()
+      #     adj_dropped = random_edge_dropout(adj, drop_rate=0.3)
+      #     features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
+      #     z = model(features_shuffled, adj_dropped.indices())
+      #     loss = coding_rate_loss(z, adj_dropped.to_dense())
+      #     loss.backward()
+      #     optimizer.step()
+      # model.eval()
+      # z = model(features, adj.indices())
+      z = torch.randn(512,512).cuda()
       fc=nn.Linear(512,7,bias=False).to(self.device)
       optimizer = torch.optim.Adam(list(fc.parameters()),lr=0.01, weight_decay=0.0001)
 
@@ -101,14 +101,19 @@ class mygnn_Predictor(Predictor):
           idx_add = self.val_mask[tmp.detach().cpu().numpy()<0.4]
 
           loss_add = self.loss_fn(output1[idx_add],F.one_hot(output[idx_add].max(dim=1)[1], 7).float())
-
-          loss_g2r = self.loss_fn(fc(z[select_mask].detach()),F.one_hot(output[select_mask].max(dim=1)[1], 7).float())
-
+          loss_add = nn.MSELoss()(F.one_hot(output[idx_add].max(dim=1)[1], 7).float(),output1[idx_add])
+          
+          
+          loss_g2r = self.loss_fn(fc(z[select_mask].detach()),output[select_mask])
 
           total_loss = loss_gcn+\
-                  0.4*loss_pse+\
-                  0.1*loss_add+\
-                  0.1*loss_g2r
+                  1.5*loss_pse+\
+                  0.0*loss_add+\
+                  0.0*loss_g2r
+          # total_loss = loss_gcn+\
+          #         1.2*loss_pse+\
+          #         0.1*loss_add+\
+          #         0.0*loss_g2r
 
           total_loss.backward()
 

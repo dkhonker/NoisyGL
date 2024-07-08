@@ -5,30 +5,8 @@ import torch.nn.functional as F
 from sklearn.metrics import roc_auc_score
 from utils.recorder import Recorder
 from copy import deepcopy
-
-
-class SymmetricCrossEntropy(nn.Module):
-    def __init__(self, alpha=0.1, beta=1):
-        super(SymmetricCrossEntropy, self).__init__()
-        self.alpha = alpha
-        self.beta = beta
-        self.epsilon = 1e-10
-
-    def forward(self, logits, labels):
-        # KL(p|q) + KL(q|p)
-        labels = torch.nn.functional.one_hot(labels, num_classes=logits.shape[-1])
-        probs = F.softmax(logits, dim=-1)
-        # KL
-        y_true = torch.clip(labels, self.eps, 1.0 - self.eps)
-        y_pred = probs
-        ce = -torch.mean(torch.sum(y_true * torch.log(y_pred), dim=-1))
-
-        # reverse KL
-        y_true = probs
-        y_pred = torch.clip(labels, self.eps, 1.0 - self.eps)
-        rce = -torch.mean(torch.sum(y_true * torch.log(y_pred), dim=-1))
-
-        return self.alpha * ce + self.beta * rce
+import torch.nn as nn
+import random
 
 class Predictor:
     def __init__(self, conf, data, device='cuda:0'):
