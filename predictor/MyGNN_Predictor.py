@@ -1,5 +1,5 @@
 from predictor.Base_Predictor import Predictor
-from predictor.module.GNNs import GCN,GCNPlus
+from predictor.module.GNNs import GCN,GCNPlus,GCNPlus1
 from torch.nn import Parameter
 import math
 import time
@@ -52,7 +52,7 @@ class mygnn_Predictor(Predictor):
       for epoch in range(1, 21):
           model.train()
           optimizer.zero_grad()
-          adj_dropped = random_edge_dropout(adj, drop_rate=0.0)
+          adj_dropped = random_edge_dropout(adj, drop_rate=0.3)
           features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
           z = model(features_shuffled, adj_dropped.indices())
           loss = coding_rate_loss(z, adj_dropped.to_dense())
@@ -60,8 +60,9 @@ class mygnn_Predictor(Predictor):
           optimizer.step()
       model.eval()
       z = model(features, adj.indices())
+      #z = torch.randn(512,512).cuda()
       fc=nn.Linear(512,7,bias=False).to(self.device)
-      optimizer = torch.optim.Adam(list(fc.parameters()),lr=0.001, weight_decay=0.0001)
+      optimizer = torch.optim.Adam(list(fc.parameters()),lr=0.01, weight_decay=0.0001)
 
       for epoch in range(self.conf.training['n_epochs']):
           improve = ''
@@ -77,9 +78,10 @@ class mygnn_Predictor(Predictor):
           edge_index = adj.indices()
 
           
-          adj_dropped = random_edge_dropout(adj, drop_rate=0.2)
+          adj_dropped = random_edge_dropout(adj, drop_rate=0.3)
           features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
           output, output1 = self.model(features, adj_dropped)
+          
           pred_model = F.softmax(output, dim=1)
 
           eps = 1e-8
@@ -96,17 +98,17 @@ class mygnn_Predictor(Predictor):
 
           tmp = self.loss_fn(output[self.val_mask], self.noisy_label[self.val_mask], reduction='none')
 
-          idx_add = self.val_mask[tmp.detach().cpu().numpy()<0.2]
+          idx_add = self.val_mask[tmp.detach().cpu().numpy()<0.4]
 
           loss_add = self.loss_fn(output1[idx_add],F.one_hot(output[idx_add].max(dim=1)[1], 7).float())
 
-          loss_g2r = self.loss_fn(output[select_mask],fc(z[select_mask].detach()))
+          loss_g2r = self.loss_fn(fc(z[select_mask].detach()),F.one_hot(output[select_mask].max(dim=1)[1], 7).float())
 
 
           total_loss = loss_gcn+\
-                  loss_pse+\
-                  2*loss_add+\
-                  0*loss_g2r
+                  0.4*loss_pse+\
+                  0.1*loss_add+\
+                  0.1*loss_g2r
 
           total_loss.backward()
 
