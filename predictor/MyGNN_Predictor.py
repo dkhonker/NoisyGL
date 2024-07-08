@@ -106,7 +106,7 @@ class mygnn_Predictor(Predictor):
           total_loss = loss_gcn+\
                   loss_pse+\
                   2*loss_add+\
-                  0.005*loss_g2r
+                  0*loss_g2r
 
           total_loss.backward()
 

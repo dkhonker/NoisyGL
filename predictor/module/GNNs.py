@@ -250,7 +250,6 @@ class GCNPlus(nn.Module):
             self.convs.append(GCNConv(in_hidden, out_hidden, bias=bias, add_self_loops=add_self_loops))
             if self.is_norm:
                 self.norms.append(self.norm_type(in_hidden))
-        self.convs1 = self.convs1.copy()
         self.convs_ano = GCNConv(in_hidden, out_hidden, bias=bias, add_self_loops=add_self_loops)
         self.convs_ano1 = GCNConv(in_hidden, out_hidden, bias=bias, add_self_loops=add_self_loops)
 
