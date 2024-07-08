@@ -43,104 +43,110 @@ class mygnn_Predictor(Predictor):
 
 
     def train(self):
+      features, adj = self.feats, self.adj
+      edge_index = adj.indices()
+      encoder = Encoder(in_channels=features.shape[1],out_channels=512, hidden_channels=1024, activation=F.relu,base_model=G2RGCNConv, k=1).to(self.device)
+      model = Model(encoder=encoder).to(self.device)        
+      coding_rate_loss = MaximalCodingRateReduction(gam1=0.5, gam2=0.5, eps=0.05).to(self.device)
+      optimizer = torch.optim.Adam( list(model.parameters()) + list(coding_rate_loss.parameters()), lr=0.001, weight_decay=0.0001)
+      for epoch in range(1, 21):
+          model.train()
+          optimizer.zero_grad()
+          adj_dropped = random_edge_dropout(adj, drop_rate=0.0)
+          features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
+          z = model(features_shuffled, adj_dropped.indices())
+          loss = coding_rate_loss(z, adj_dropped.to_dense())
+          loss.backward()
+          optimizer.step()
+      model.eval()
+      z = model(features, adj.indices())
+      fc=nn.Linear(512,7,bias=False).to(self.device)
+      optimizer = torch.optim.Adam(list(fc.parameters()),lr=0.001, weight_decay=0.0001)
 
-        features, adj = self.feats, self.adj
-        edge_index = adj.indices()
-        adj_dropped = random_edge_dropout(adj, drop_rate=0.3)
-        features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
-        encoder = Encoder(in_channels=features.shape[1],out_channels=512, hidden_channels=1024, activation=F.relu,base_model=G2RGCNConv, k=1).to(self.device)
-        model = Model(encoder=encoder).to(self.device)        
-        coding_rate_loss = MaximalCodingRateReduction(gam1=0.5, gam2=0.5, eps=0.05).to(self.device)
-        optimizer = torch.optim.Adam( list(model.parameters()) + list(coding_rate_loss.parameters()), lr=0.001, weight_decay=0.0001)
-        for epoch in range(1, 21):
-            model.train()
-            optimizer.zero_grad()
-            z = model(features_shuffled, adj_dropped.indices())
-            loss = coding_rate_loss(z, adj_dropped.to_dense())
-            loss.backward()
-            optimizer.step()
+      for epoch in range(self.conf.training['n_epochs']):
+          improve = ''
+          t0 = time.time()
+          self.model.train()
+          self.optim.zero_grad()
 
-        for epoch in range(self.conf.training['n_epochs']):
-            improve = ''
-            t0 = time.time()
-            self.model.train()
-            self.optim.zero_grad()
+          fc.train()
+          optimizer.zero_grad()
+          
+          # obtain representations and rec loss of the estimator
+          features, adj = self.feats, self.adj
+          edge_index = adj.indices()
 
-            # obtain representations and rec loss of the estimator
-            features, adj = self.feats, self.adj
-            edge_index = adj.indices()
+          
+          adj_dropped = random_edge_dropout(adj, drop_rate=0.2)
+          features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
+          output, output1 = self.model(features, adj_dropped)
+          pred_model = F.softmax(output, dim=1)
 
-            
-            adj_dropped = random_edge_dropout(adj, drop_rate=0.3)
-            features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
-            output, output1 = self.model(features, adj_dropped)
-            pred_model = F.softmax(output, dim=1)
-
-            eps = 1e-8
-            pred_model = pred_model.clamp(eps, 1 - eps)
-            # loss of GCN classifier
-            # if epoch>20:
-            #   softmax_probs = F.softmax(output, dim=1)
-
-            #   max_probs, _ = torch.max(softmax_probs, dim=1)
-            #   max_probs = max_probs.detach().cpu().numpy()
-
-            #   select_mask = self.train_mask[max_probs[self.train_mask] > 0.8]
-              
-            
-            
-
-            # else:
-            select_mask=self.train_mask
-            loss_gcn = self.loss_fn(output[select_mask], self.noisy_label[select_mask])
-            loss_pse = self.loss_fn(output1[select_mask], self.noisy_label[select_mask])
+          eps = 1e-8
+          pred_model = pred_model.clamp(eps, 1 - eps)
+          # loss of GCN classifier
+          # if epoch >10:
+          #   tmp = self.loss_fn(output[self.train_mask], self.noisy_label[self.train_mask], reduction='none')
+          #   select_mask=self.train_mask[tmp.detach().cpu().numpy()<0.5]
+          # else:
+          select_mask=self.train_mask
+          loss_gcn = self.loss_fn(output[select_mask], self.noisy_label[select_mask])
+          loss_pse = self.loss_fn(output1[select_mask], self.noisy_label[select_mask])
 
 
-            tmp = self.loss_fn(output[self.val_mask], self.noisy_label[self.val_mask])
-            idx_add = self.val_mask[tmp<0.3]
-            
-            loss_add = self.loss_fn(F.one_hot(output[idx_add].max(dim=1)[1], 7).float(), output1[idx_add])
+          tmp = self.loss_fn(output[self.val_mask], self.noisy_label[self.val_mask], reduction='none')
 
-            total_loss = loss_gcn+loss_pse+0.005*loss_add
+          idx_add = self.val_mask[tmp.detach().cpu().numpy()<0.2]
 
-            total_loss.backward()
+          loss_add = self.loss_fn(output1[idx_add],F.one_hot(output[idx_add].max(dim=1)[1], 7).float())
 
-            self.optim.step()
+          loss_g2r = self.loss_fn(output[select_mask],fc(z[select_mask].detach()))
 
-            # forward and backward
-            acc_train = self.metric(self.noisy_label[self.train_mask].cpu().numpy(),
-                                    output[self.train_mask].detach().cpu().numpy())
 
-            # Evaluate validation set performance separately
-            # acc_pred_val, acc_val, loss_val = self.evaluate(self.noisy_label[self.val_mask], self.val_mask, pred_edge_index, predictor_weights_1, model_edge_index, estimated_weights_1)
-            loss_val, acc_val = self.evaluate(self.noisy_label[self.val_mask], self.val_mask)
+          total_loss = loss_gcn+\
+                  loss_pse+\
+                  2*loss_add+\
+                  0.005*loss_g2r
 
-            flag, flag_earlystop = self.recoder.add(loss_val, acc_val)
-            if flag:
-                improve = '*'
-                self.total_time = time.time() - self.start_time
-                self.best_val_loss = loss_val
-                self.result['valid'] = acc_val
-                self.result['train'] = acc_train
+          total_loss.backward()
 
-                self.best_val_acc = acc_val
-                self.weights = deepcopy(self.model.state_dict())
+          self.optim.step()
+          optimizer.step()
 
-                # self.best_acc_pred_val = acc_pred_val
-            elif flag_earlystop:
-                break
+          # forward and backward
+          acc_train = self.metric(self.noisy_label[self.train_mask].cpu().numpy(),
+                                  output[self.train_mask].detach().cpu().numpy())
 
-            if self.conf.training['debug']:
-                print(
-                    "Epoch {:05d} | Time(s) {:.4f} | Loss(train) {:.4f} | Acc(train) {:.4f} | Loss(val) {:.4f} | Acc(val) {:.4f} | {}".format(
-                        epoch + 1, time.time() - t0, total_loss.item(), acc_train, loss_val, acc_val, improve))
+          # Evaluate validation set performance separately
+          # acc_pred_val, acc_val, loss_val = self.evaluate(self.noisy_label[self.val_mask], self.val_mask, pred_edge_index, predictor_weights_1, model_edge_index, estimated_weights_1)
+          loss_val, acc_val = self.evaluate(self.noisy_label[self.val_mask], self.val_mask)
 
-        print('Optimization Finished!')
-        print('Time(s): {:.4f}'.format(self.total_time))
-        loss_test, acc_test = self.test(self.test_mask)
-        self.result['test'] = acc_test
-        print("Loss(test) {:.4f} | Acc(test) {:.4f}".format(loss_test.item(), acc_test))
-        return self.result
+          flag, flag_earlystop = self.recoder.add(loss_val, acc_val)
+          if flag:
+              improve = '*'
+              self.total_time = time.time() - self.start_time
+              self.best_val_loss = loss_val
+              self.result['valid'] = acc_val
+              self.result['train'] = acc_train
+
+              self.best_val_acc = acc_val
+              self.weights = deepcopy(self.model.state_dict())
+
+              # self.best_acc_pred_val = acc_pred_val
+          elif flag_earlystop:
+              break
+
+          if self.conf.training['debug']:
+              print(
+                  "Epoch {:05d} | Time(s) {:.4f} | Loss(train) {:.4f} | Acc(train) {:.4f} | Loss(val) {:.4f} | Acc(val) {:.4f} | {}".format(
+                      epoch + 1, time.time() - t0, total_loss.item(), acc_train, loss_val, acc_val, improve))
+
+      print('Optimization Finished!')
+      print('Time(s): {:.4f}'.format(self.total_time))
+      loss_test, acc_test = self.test(self.test_mask)
+      self.result['test'] = acc_test
+      print("Loss(test) {:.4f} | Acc(test) {:.4f}".format(loss_test.item(), acc_test))
+      return self.result
 
     def evaluate(self, label, mask):
 
