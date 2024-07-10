@@ -18,6 +18,7 @@ import numpy as np
 class mygnn_Predictor(Predictor):
     def __init__(self, conf, data, device='cuda:0'):
         super().__init__(conf, data, device)
+        self.device = device
 
     def method_init(self, conf, data):
         self.model = GCNPlus(in_channels=conf.model['n_feat'], hidden_channels=conf.model['n_hidden'],
@@ -97,31 +98,39 @@ class mygnn_Predictor(Predictor):
           loss_gcn = self.loss_fn(output[select_mask], self.noisy_label[select_mask])
           loss_pse = self.loss_fn(output1[select_mask], self.noisy_label[select_mask])
 
-          Y_all = torch.zeros(Z_all.shape[0], num_classes).to(device)
-          Y_all[train_idx] = Y
-          Y_all = args.beta*Y_all + (1-args.beta)*cos_mat
-
-          model2 = LabelPropagation(num_layers=args.T, alpha=args.alpha)
-          labels = model2(Y_all, data.edge_index, mask=train_idx)
-
+          
+          
           tmp = self.loss_fn(output[self.val_mask], self.noisy_label[self.val_mask], reduction='none')
 
           idx_add = self.val_mask[tmp.detach().cpu().numpy()<0.4]
+          #标签传播
+          idx_lp = np.concatenate((idx_add,self.train_mask))
+          Y_all = torch.zeros(self.noisy_label.shape[0], 7).to(self.device)
+          Y_all[self.train_mask] = F.one_hot(self.noisy_label[self.train_mask], 7).float()
+          model2 = LabelPropagation(num_layers=5, alpha=0.6)
+          pro_labels = model2(Y_all, self.edge_index, mask=idx_lp)
+          loss_lp=1.2*self.loss_fn(output1[idx_lp], pro_labels[idx_lp])+\
+              1*self.loss_fn(output[idx_lp], pro_labels[idx_lp])
+          #标签传播
 
           loss_add = self.loss_fn(output1[idx_add],F.one_hot(output[idx_add].max(dim=1)[1], 7).float())
-          loss_add = nn.MSELoss()(F.one_hot(output[idx_add].max(dim=1)[1], 7).float(),output1[idx_add])
+          loss_add = self.loss_fn(F.one_hot(output[idx_add].max(dim=1)[1], 7).float(),output1[idx_add])
+
+          #loss_add = nn.MSELoss()(F.one_hot(output[idx_add].max(dim=1)[1], 7).float(),output1[idx_add])
           
           
           loss_g2r = self.loss_fn(fc(z[select_mask].detach()),output[select_mask])
 
-          total_loss = loss_gcn+\
-                  1.5*loss_pse+\
-                  0.0*loss_add+\
-                  0.0*loss_g2r
           # total_loss = loss_gcn+\
-          #         1.2*loss_pse+\
-          #         0.1*loss_add+\
+          #         1.5*loss_pse+\
+          #         0.7*loss_add+\
+          #         0*loss_lp+\
           #         0.0*loss_g2r
+          total_loss = loss_gcn+\
+                  1.2*loss_pse+\
+                  0.1*loss_add+\
+                  0.0*loss_lp+\
+                  0.0*loss_g2r
 
           total_loss.backward()
 
