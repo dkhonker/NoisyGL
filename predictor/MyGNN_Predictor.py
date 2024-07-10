@@ -11,6 +11,8 @@ import torch_geometric.utils as utils
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.utils import add_remaining_self_loops
 from torch_scatter import scatter_add
+from torch_geometric.nn import LabelPropagation
+
 import numpy as np
 
 class mygnn_Predictor(Predictor):
@@ -95,6 +97,12 @@ class mygnn_Predictor(Predictor):
           loss_gcn = self.loss_fn(output[select_mask], self.noisy_label[select_mask])
           loss_pse = self.loss_fn(output1[select_mask], self.noisy_label[select_mask])
 
+          Y_all = torch.zeros(Z_all.shape[0], num_classes).to(device)
+          Y_all[train_idx] = Y
+          Y_all = args.beta*Y_all + (1-args.beta)*cos_mat
+
+          model2 = LabelPropagation(num_layers=args.T, alpha=args.alpha)
+          labels = model2(Y_all, data.edge_index, mask=train_idx)
 
           tmp = self.loss_fn(output[self.val_mask], self.noisy_label[self.val_mask], reduction='none')
 
