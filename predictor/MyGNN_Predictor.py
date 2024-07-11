@@ -43,22 +43,21 @@ class mygnn_Predictor(Predictor):
         features = self.feats
         self.edge_index = edge_index.to(self.device)
         self.idx_unlabel = torch.LongTensor(list(set(range(features.shape[0])) - set(self.train_mask))).to(self.device)
-
-
+        
     def train(self):
-      # features, adj = self.feats, self.adj
-      # edge_index = adj.indices()
-      # encoder = Encoder(in_channels=features.shape[1],out_channels=512, hidden_channels=1024, activation=F.relu,base_model=G2RGCNConv, k=1).to(self.device)
+      #features, adj = self.feats, self.adj
+      #edge_index = adj.indices()
+      #encoder = Encoder(in_channels=features.shape[1],out_channels=512, hidden_channels=1024, activation=F.relu,base_model=G2RGCNConv, k=1).to(self.device)
       # model = Model(encoder=encoder).to(self.device)        
       # coding_rate_loss = MaximalCodingRateReduction(gam1=0.5, gam2=0.5, eps=0.05).to(self.device)
       # optimizer = torch.optim.Adam( list(model.parameters()) + list(coding_rate_loss.parameters()), lr=0.001, weight_decay=0.0001)
       # for epoch in range(1, 21):
       #     model.train()
       #     optimizer.zero_grad()
-      #     adj_dropped = random_edge_dropout(adj, drop_rate=0.3)
+      #     adj_dropped = random_edge_dropout(adj, drop_rate=0.0)
       #     features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
-      #     z = model(features_shuffled, adj_dropped.indices())
-      #     loss = coding_rate_loss(z, adj_dropped.to_dense())
+      #     z = model(features, adj_dropped.indices())
+      #     loss = coding_rate_loss(z, adj.to_dense())
       #     loss.backward()
       #     optimizer.step()
       # model.eval()
@@ -94,7 +93,14 @@ class mygnn_Predictor(Predictor):
           #   tmp = self.loss_fn(output[self.train_mask], self.noisy_label[self.train_mask], reduction='none')
           #   select_mask=self.train_mask[tmp.detach().cpu().numpy()<0.5]
           # else:
-          select_mask=self.train_mask
+            model_outputs = self.loss_fn(output[self.train_mask], self.noisy_label[self.train_mask], reduction='none')
+            train_outputs = model_outputs[self.train_mask]
+            num_elements = len(train_outputs)
+            num_elements_to_select = int(0.8 * num_elements)
+            sorted_train_outputs, sorted_indices = torch.sort(train_outputs)
+            selected_outputs = sorted_train_outputs[:num_elements_to_select]
+            selected_indices = sorted_indices[:num_elements_to_select]
+          select_mask=self.train_mask[selected_indices]
           loss_gcn = self.loss_fn(output[select_mask], self.noisy_label[select_mask])
           loss_pse = self.loss_fn(output1[select_mask], self.noisy_label[select_mask])
 
@@ -347,6 +353,7 @@ class G2RGCNConv(MessagePassing):
 
     def forward(self, x, edge_index, edge_weight=None):
         """"""
+        
         x = torch.matmul(x, self.weight)
 
         if self.cached and self.cached_result is not None:
