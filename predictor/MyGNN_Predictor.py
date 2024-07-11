@@ -89,18 +89,21 @@ class mygnn_Predictor(Predictor):
           eps = 1e-8
           pred_model = pred_model.clamp(eps, 1 - eps)
           # loss of GCN classifier
-          # if epoch >10:
+          # if epoch >-1:
           #   tmp = self.loss_fn(output[self.train_mask], self.noisy_label[self.train_mask], reduction='none')
-          #   select_mask=self.train_mask[tmp.detach().cpu().numpy()<0.5]
+          #   select_mask=self.train_mask[tmp.detach().cpu().numpy()<4]
           # else:
+          if epoch >-1:
             model_outputs = self.loss_fn(output[self.train_mask], self.noisy_label[self.train_mask], reduction='none')
             train_outputs = model_outputs[self.train_mask]
             num_elements = len(train_outputs)
-            num_elements_to_select = int(0.8 * num_elements)
-            sorted_train_outputs, sorted_indices = torch.sort(train_outputs)
+            num_elements_to_select = int(0.9 * num_elements)
+            sorted_train_outputs, sorted_indices = torch.sort(train_outputs,descending=True)
             selected_outputs = sorted_train_outputs[:num_elements_to_select]
             selected_indices = sorted_indices[:num_elements_to_select]
-          select_mask=self.train_mask[selected_indices]
+            select_mask=self.train_mask[selected_indices.cpu()]
+          else:
+            select_mask=self.train_mask
           loss_gcn = self.loss_fn(output[select_mask], self.noisy_label[select_mask])
           loss_pse = self.loss_fn(output1[select_mask], self.noisy_label[select_mask])
 
