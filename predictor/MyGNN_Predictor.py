@@ -63,7 +63,7 @@ class mygnn_Predictor(Predictor):
       # model.eval()
       # z = model(features, adj.indices())
       z = torch.randn(512,512).cuda()
-      fc=nn.Linear(512,7,bias=False).to(self.device)
+      fc=nn.Linear(512,len(torch.unique(self.noisy_label)),bias=False).to(self.device)
       optimizer = torch.optim.Adam(list(fc.parameters()),lr=0.01, weight_decay=0.0001)
 
       for epoch in range(self.conf.training['n_epochs']):
@@ -97,7 +97,7 @@ class mygnn_Predictor(Predictor):
             model_outputs = self.loss_fn(output[self.train_mask], self.noisy_label[self.train_mask], reduction='none')
             train_outputs = model_outputs[self.train_mask]
             num_elements = len(train_outputs)
-            num_elements_to_select = int(0.9 * num_elements)
+            num_elements_to_select = num_elements-1#int(0.9 * num_elements)
             sorted_train_outputs, sorted_indices = torch.sort(train_outputs,descending=True)
             selected_outputs = sorted_train_outputs[:num_elements_to_select]
             selected_indices = sorted_indices[:num_elements_to_select]
@@ -114,16 +114,16 @@ class mygnn_Predictor(Predictor):
           idx_add = self.val_mask[tmp.detach().cpu().numpy()<0.4]
           #标签传播
           idx_lp = np.concatenate((idx_add,self.train_mask))
-          Y_all = torch.zeros(self.noisy_label.shape[0], 7).to(self.device)
-          Y_all[self.train_mask] = F.one_hot(self.noisy_label[self.train_mask], 7).float()
-          model2 = LabelPropagation(num_layers=5, alpha=0.6)
+          Y_all = torch.zeros(self.noisy_label.shape[0], len(torch.unique(self.noisy_label))).to(self.device)
+          Y_all[self.train_mask] = F.one_hot(self.noisy_label[self.train_mask], len(torch.unique(self.noisy_label))).float()
+          model2 = LabelPropagation(num_layers=10, alpha=1)
           pro_labels = model2(Y_all, self.edge_index, mask=idx_lp)
           loss_lp=1.2*self.loss_fn(output1[idx_lp], pro_labels[idx_lp])+\
               1*self.loss_fn(output[idx_lp], pro_labels[idx_lp])
           #标签传播
 
-          loss_add = self.loss_fn(output1[idx_add],F.one_hot(output[idx_add].max(dim=1)[1], 7).float())
-          loss_add = self.loss_fn(F.one_hot(output[idx_add].max(dim=1)[1], 7).float(),output1[idx_add])
+          loss_add = self.loss_fn(output1[idx_add],F.one_hot(output[idx_add].max(dim=1)[1], len(torch.unique(self.noisy_label))).float())
+          loss_add = self.loss_fn(F.one_hot(output[idx_add].max(dim=1)[1], len(torch.unique(self.noisy_label))).float(),output1[idx_add])
 
           #loss_add = nn.MSELoss()(F.one_hot(output[idx_add].max(dim=1)[1], 7).float(),output1[idx_add])
           
@@ -135,12 +135,16 @@ class mygnn_Predictor(Predictor):
           #         0.7*loss_add+\
           #         0*loss_lp+\
           #         0.0*loss_g2r
+          # total_loss = loss_gcn+\
+          #         1.2*loss_pse+\
+          #         0.1*loss_add+\
+          #         0.3*loss_lp+\
+          #         0.0*loss_g2r
           total_loss = loss_gcn+\
                   1.2*loss_pse+\
                   0.1*loss_add+\
-                  0.0*loss_lp+\
+                  0.3*loss_lp+\
                   0.0*loss_g2r
-
           total_loss.backward()
 
           self.optim.step()
