@@ -82,21 +82,13 @@ class mygnn_Predictor(Predictor):
 
           adj_dropped = random_edge_dropout(adj, drop_rate=0.3)
           features_shuffled = random_feature_shuffle(features, self.train_mask,shuffle_prob=0.0)
-          representations, rec_loss = self.estimator(features, adj)
-          pred_edge_index = torch.cat([edge_index, self.pred_edge_index], dim=1)
-          origin_w = torch.cat([torch.ones(edge_index.shape[1]), torch.zeros(self.pred_edge_index.shape[1])]).to(
-                self.device)
-
-          predictor_weights, _ = self.estimator.get_estimated_weigths(pred_edge_index, representations, origin_w)
-          edge_remain_idx = torch.where(predictor_weights != 0)[0].detach()
-          predictor_weights = predictor_weights[edge_remain_idx].detach()
-          pred_edge_index = pred_edge_index[:, edge_remain_idx]
-
-          reformed_adj = torch.sparse_coo_tensor(pred_edge_index, predictor_weights, [self.n_nodes, self.n_nodes])
+          
+          representations, rec_loss = self.estimator(features, adj_dropped)
+          reformed_adj = torch.sparse_coo_tensor(edge_index, edge_weight, [self.n_nodes, self.n_nodes])
 
           
           
-          output, output1 = self.model(features, reformed_adj)
+          output, output1 = self.model(features, adj_dropped)
           
           pred_model = F.softmax(output, dim=1)
 
@@ -180,9 +172,6 @@ class mygnn_Predictor(Predictor):
               self.result['valid'] = acc_val
               self.result['train'] = acc_train
 
-              self.best_pred_graph = predictor_weights.detach()
-              self.best_edge_idx = pred_edge_index.detach()
-              
               self.best_val_acc = acc_val
               self.weights = deepcopy(self.model.state_dict())
 
@@ -202,17 +191,13 @@ class mygnn_Predictor(Predictor):
       print("Loss(test) {:.4f} | Acc(test) {:.4f}".format(loss_test.item(), acc_test))
       return self.result
 
-    def evaluate(self, label, mask,pred_edge_index=None, estimated_weights=None):
+    def evaluate(self, label, mask):
 
-        if pred_edge_index is None:
-            estimated_weights = self.best_pred_graph
-            pred_edge_index = self.best_edge_idx
-        reformed_adj = torch.sparse_coo_tensor(pred_edge_index, estimated_weights, [self.n_nodes, self.n_nodes])
         self.model.eval()
         with torch.no_grad():
             features = self.feats
             with torch.no_grad():
-                output,_ = self.model(features, reformed_adj)
+                output,_ = self.model(features, self.adj)
             logits = output[mask]
             loss_val = self.loss_fn(logits, label)
 
@@ -225,14 +210,10 @@ class mygnn_Predictor(Predictor):
         edge_index = self.edge_index
         idx_test = mask
 
-        estimated_weights = self.best_pred_graph
-        pred_edge_index = self.best_edge_idx
-        reformed_adj = torch.sparse_coo_tensor(pred_edge_index, estimated_weights, [self.n_nodes, self.n_nodes])
-        
         with torch.no_grad():
             self.model.eval()
             self.model.load_state_dict(self.weights)
-            output,_ = self.model(features, reformed_adj)
+            output,_ = self.model(features, adj)
             loss_test = self.loss_fn(output[idx_test], labels[idx_test])
             acc_test = self.metric(labels[idx_test].cpu().numpy(), output[idx_test].detach().cpu().numpy())
             if self.conf.training["debug"]:
